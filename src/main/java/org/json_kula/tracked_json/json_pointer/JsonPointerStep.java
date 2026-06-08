@@ -1,4 +1,4 @@
-package org.json_kula.tracked_json;
+package org.json_kula.tracked_json.json_pointer;
 
 public sealed interface JsonPointerStep permits JsonPointerStep.Name, JsonPointerStep.Index {
     JsonPointerStep ROOT = new Name("");

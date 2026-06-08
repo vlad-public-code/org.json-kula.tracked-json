@@ -2,7 +2,7 @@ package org.json_kula.tracked_json.json_path;
 
 import com.fasterxml.jackson.core.JsonPointer;
 import com.fasterxml.jackson.databind.JsonNode;
-import org.json_kula.tracked_json.TrackedJsonNode;
+import org.json_kula.tracked_json.json_node.TrackedJsonNode;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -26,8 +26,8 @@ public final class JsonPathSearch {
         JsonNode root = origin.node();
         List<TrackedJsonNode> cursor = new ArrayList<>();
         cursor.add(origin);
-        for (JsonPathParser.Step step : jsonPath.steps) {
-            cursor = step.apply(cursor, root);
+        for (Step step : jsonPath.steps) {
+            cursor = step.accept(new StepEvaluator(cursor, root));
             if (cursor.isEmpty()) return List.of();
         }
         return cursor.stream().filter(n -> !n.isMissingNode()).toList();

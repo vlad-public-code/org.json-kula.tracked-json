@@ -10,7 +10,14 @@ When you traverse a JSON document with plain `JsonNode`, you lose location infor
 
 - Java 21
 - Jackson Databind 2.18+
-- Jayway JsonPath 2.9+ (only if you use `findByJsonPath`)
+
+## Package layout
+
+| Package | Contents |
+|---|---|
+| `org.json_kula.tracked_json.json_node` | `TrackedJsonNode` — the core pointer-tracking wrapper |
+| `org.json_kula.tracked_json.json_pointer` | `JsonPointerStep` — last-segment descriptor |
+| `org.json_kula.tracked_json.json_path` | `JsonPathSearch`, `JsonPathExpression`, `InvalidPathException` — JSONPath public API |
 
 ## Quick start
 
@@ -20,7 +27,7 @@ JsonNode doc = mapper.readTree(json);
 TrackedJsonNode root = TrackedJsonNode.ofRoot(doc);
 
 TrackedJsonNode value = root.get("order").get("items").get(0).get("price");
-System.out.println(value.asDouble());          // 9.99
+System.out.println(value.asDouble());           // 9.99
 System.out.println(value.pointer().toString()); // /order/items/0/price
 ```
 
@@ -29,8 +36,8 @@ System.out.println(value.pointer().toString()); // /order/items/0/price
 ### Factory
 
 ```java
-TrackedJsonNode.ofRoot(JsonNode root)        // pointer = ""
-TrackedJsonNode.of(JsonNode node, JsonPointer pointer) // arbitrary position
+TrackedJsonNode.ofRoot(JsonNode root)                   // pointer = ""
+TrackedJsonNode.of(JsonNode node, JsonPointer pointer)  // arbitrary position
 ```
 
 ### Navigation — pointer extends automatically
@@ -61,13 +68,29 @@ void forEachEntry(BiConsumer<String, TrackedJsonNode> action)
 
 ### JSONPath search
 
+Implements [RFC 9535 — JSONPath: Query Expressions for JSON](https://www.rfc-editor.org/rfc/rfc9535).
+
 ```java
-List<TrackedJsonNode> results = root.findByJsonPath("$.store.book[*].author");
-// each result carries its absolute pointer
+// Compile once, evaluate many times
+JsonPathExpression expr = JsonPathExpression.compile("$.store.book[*].author");
+List<TrackedJsonNode> results = JsonPathSearch.find(root, expr);
+
+// Or parse and evaluate in one call
+List<TrackedJsonNode> results = JsonPathSearch.find(root, "$.store.book[?(@.price < 10)]");
+
+// Each result carries its absolute pointer
 results.forEach(n -> System.out.println(n.pointer() + " = " + n.asText()));
 ```
 
-The search is evaluated relative to the node it is called on, not the document root. Throws `InvalidPathException` for malformed expressions; returns an empty list when nothing matches.
+Supported features:
+- Child (`$.name`, `$['name']`) and wildcard (`.*`, `[*]`) selectors
+- Index (`[0]`, `[-1]`) and slice (`[1:5:2]`) selectors
+- Recursive descent (`..`)
+- Union (`['a','b']`, `[0,2]`)
+- Filter expressions (`[?(...)]`) with `&&`, `||`, `!`, comparison operators, and nested paths
+- Function extensions: `length()`, `count()`, `value()`, `match()`, `search()` (I-Regexp per [RFC 9485](https://www.rfc-editor.org/rfc/rfc9485))
+
+Throws `InvalidPathException` for malformed expressions; returns an empty list when nothing matches. Validated against the [RFC 9535 Compliance Test Suite](https://github.com/jsonpath-standard/jsonpath-compliance-test-suite) (703 tests).
 
 ### Step — last navigation segment
 

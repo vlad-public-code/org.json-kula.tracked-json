@@ -12,10 +12,10 @@ import java.util.List;
  */
 public final class JsonPathExpression {
 
-    final List<JsonPathParser.Step> steps;
+    final List<Step> steps;
     private final String expression;
 
-    private JsonPathExpression(List<JsonPathParser.Step> steps, String expression) {
+    private JsonPathExpression(List<Step> steps, String expression) {
         this.steps = steps;
         this.expression = expression;
     }
