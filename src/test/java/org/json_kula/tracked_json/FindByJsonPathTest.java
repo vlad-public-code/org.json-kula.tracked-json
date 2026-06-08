@@ -2,7 +2,7 @@ package org.json_kula.tracked_json;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.jayway.jsonpath.InvalidPathException;
+import org.json_kula.tracked_json.json_path.InvalidPathException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 

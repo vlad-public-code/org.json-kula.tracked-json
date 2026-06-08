@@ -2,6 +2,7 @@ package org.json_kula.tracked_json;
 
 import com.fasterxml.jackson.core.JsonPointer;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.json_kula.tracked_json.json_path.JsonPathSearch;
 
 import java.util.Iterator;
 import java.util.LinkedHashSet;
