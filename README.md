@@ -36,20 +36,21 @@ System.out.println(value.pointer().toString()); // /order/items/0/price
 ### Factory
 
 ```java
-TrackedJsonNode.ofRoot(JsonNode root)                   // pointer = ""
-TrackedJsonNode.of(JsonNode node, JsonPointer pointer)  // arbitrary position
+TrackedJsonNode.ofRoot(JsonNode root)                            // pointer = ""
+TrackedJsonNode.of(JsonNode root, JsonNode node, JsonPointer p)  // arbitrary position
 ```
 
 ### Navigation — pointer extends automatically
 
-| Method | Missing behaviour |
-|---|---|
-| `get(String field)` | returns `null` |
-| `get(int index)` | returns `null` |
-| `path(String field)` | returns MissingNode-wrapped node |
-| `path(int index)` | returns MissingNode-wrapped node |
-| `at(JsonPointer rel)` | returns MissingNode-wrapped node |
-| `at(String jsonPtrExpr)` | returns MissingNode-wrapped node |
+| Method | Description | Missing behaviour |
+|---|---|---|
+| `get(String field)` | Navigate to an object property by name | returns `null` |
+| `get(int index)` | Navigate to an array element by zero-based index | returns `null` |
+| `path(String field)` | Navigate to an object property by name (null-safe) | returns MissingNode-wrapped node |
+| `path(int index)` | Navigate to an array element by zero-based index (null-safe) | returns MissingNode-wrapped node |
+| `at(JsonPointer rel)` | Navigate to a descendant by relative JSON Pointer | returns MissingNode-wrapped node |
+| `at(String jsonPtrExpr)` | Navigate to a descendant by relative JSON Pointer expression | returns MissingNode-wrapped node |
+| `parent()` | Navigate to the parent node | returns MissingNode-wrapped node for the root |
 
 Field names containing `/` or `~` are RFC 6901-escaped in the pointer automatically.
 
@@ -109,6 +110,7 @@ switch (step) {
 ```java
 JsonNode    node()      // raw Jackson node
 JsonPointer pointer()   // absolute path from document root
+JsonNode    root()      // document root node
 
 // Type checks: isObject, isArray, isValueNode, isMissingNode, isNull,
 //              isTextual, isNumber, isBoolean, has(String), has(int), size()
