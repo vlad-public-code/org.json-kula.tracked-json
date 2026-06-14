@@ -17,6 +17,7 @@
 | `org.json_kula.tracked_json.json_node` | `TrackedJsonNode.java` — core wrapper |
 | `org.json_kula.tracked_json.json_pointer` | `JsonPointerStep.java` — last-segment descriptor |
 | `org.json_kula.tracked_json.json_path` | `JsonPathSearch`, `JsonPathExpression`, `InvalidPathException` (public); `JsonPathParser`, `Step`, `StepVisitor`, `StepEvaluator`, `FilterExpr`, `FilterValue` (package-private) |
+| `org.json_kula.tracked_json.json_patch` | `JsonPatch`, `JsonPatchException` (public); `JsonPatchOperation` (package-private) |
 
 ## Source files
 
@@ -33,6 +34,9 @@
 | `json_path/StepEvaluator.java` | Visitor implementation — evaluation logic, `collectAll` for recursive descent |
 | `json_path/FilterExpr.java` | Sealed filter-expression hierarchy + `ComparisonOp` enum |
 | `json_path/FilterValue.java` | Sealed filter-value hierarchy + `FunctionResultType` enum |
+| `json_patch/JsonPatch.java` | Public API — compiled, immutable patch; `compile(JsonNode)` + `apply(JsonNode/TrackedJsonNode)` |
+| `json_patch/JsonPatchException.java` | Public checked exception for invalid patch documents and failed operations |
+| `json_patch/JsonPatchOperation.java` | Package-private sealed interface with 6 record types (Add, Remove, Replace, Move, Copy, Test) |
 
 ## Key design decisions
 
@@ -71,6 +75,29 @@ Sealed hierarchy: `SingularFilterPath`, `NonSingularFilterPath`, `LiteralValue`,
 
 `JsonPathSearch.find()` threads `List<TrackedJsonNode>` (node + pointer pairs) through every step. No identity-map lookup at the end; pointers are built incrementally via `appendProperty` / `appendIndex`.
 
+## JSON Patch (`JsonPatch`)
+
+Implements [RFC 6902 — JSON Patch](https://datatracker.ietf.org/doc/html/rfc6902). All six operations are supported: `add`, `remove`, `replace`, `move`, `copy`, `test`.
+
+**Public API:**
+
+- `JsonPatch.compile(JsonNode patch)` — parses and validates the patch array; throws `JsonPatchException` for unknown ops, missing required fields, or malformed pointers.
+- `patch.apply(JsonNode document)` — applies all operations to a deep copy; throws `JsonPatchException` if any operation fails. The original document is never mutated.
+- `patch.apply(TrackedJsonNode document)` — convenience overload; returns `TrackedJsonNode.ofRoot(result)`.
+
+**Key design decisions:**
+
+- `JsonPatch` is final, immutable, and thread-safe. Compile once, apply many times.
+- `apply` always deep-copies the input document before mutating; if any operation fails the partial result is discarded and the original is unchanged.
+- The RFC 6902 §4.4 "proper prefix" constraint for `move` is enforced naturally: after removing `from`, if `path` is inside the removed subtree its parent will be missing and `navigateToParent` throws. This correctly allows array-shift cases (e.g. `move /arr/0 → /arr/0/x` shifts indices after remove).
+- Array index `-` is accepted only by `add` (append to end); all other operations reject it.
+- Array indices with leading zeros (e.g. `"01"`) and non-integer tokens (e.g. `"1e0"`) are rejected per RFC 6901.
+- Root path `""` is valid for `add` and `replace` (replaces the entire document); `remove` on root throws.
+
+**Internal structure:**
+
+`JsonPatchOperation` is a package-private sealed interface with six record types (one per RFC 6902 operation). `JsonPatch.compile` produces a `List<JsonPatchOperation>`; `apply` dispatches via a `switch` expression using Java 21 record patterns.
+
 ## Testing conventions
 
 - All tests use JUnit 5 (`@BeforeAll` + `@Test`).
@@ -78,4 +105,6 @@ Sealed hierarchy: `SingularFilterPath`, `NonSingularFilterPath`, `LiteralValue`,
 - `TrackedJsonNodeTest` — navigation, iteration, step, RFC 6901 escaping, edge cases, plus a small subset of `findByJsonPath` smoke tests.
 - `FindByJsonPathTest` — dedicated coverage for `findByJsonPath`: root selection, empty-key property, wildcard, recursive descent, predicates, non-root origin, no-match, invalid expression.
 - `JsonPathSearchComplianceTest` — parameterized against all 703 valid+invalid cases from the [RFC 9535 Compliance Test Suite](https://github.com/jsonpath-standard/jsonpath-compliance-test-suite). Also validates `TrackedJsonNode::pointer` against `result_paths` for the 447 tests that supply them.
+- `JsonPatchTest` — unit tests for all six patch operations, edge cases, compile-time validation, and RFC 6902 Appendix A examples (65 tests).
+- `JsonPatchComplianceTest` — parameterized against 9 test data files, stored in `src/test/resources/json_patch/`. Two `@ParameterizedTest` methods: `apply_succeeds` checks result equality; `apply_throws` asserts `JsonPatchException` (126 tests).
 - Run with `mvn test`.

@@ -48,11 +48,7 @@ public final class JsonPatch {
      * @throws JsonPatchException if any operation fails
      */
     public JsonNode apply(JsonNode document) throws JsonPatchException {
-        JsonNode working = document.deepCopy();
-        for (JsonPatchOperation op : operations) {
-            working = applyOp(working, op);
-        }
-        return working;
+        return applyInternal(document.deepCopy()).node();
     }
 
     /**
@@ -62,7 +58,15 @@ public final class JsonPatch {
      * @throws JsonPatchException if any operation fails
      */
     public TrackedJsonNode apply(TrackedJsonNode document) throws JsonPatchException {
-        return TrackedJsonNode.ofRoot(apply(document.node()));
+        return applyInternal(document.node().deepCopy());
+    }
+
+    private TrackedJsonNode applyInternal(JsonNode workingDoc) throws JsonPatchException {
+        TrackedJsonNode working = TrackedJsonNode.ofRoot(workingDoc);
+        for (JsonPatchOperation op : operations) {
+            working = applyOp(working, op);
+        }
+        return working;
     }
 
     // ── Parsing ───────────────────────────────────────────────────────────────
@@ -116,7 +120,8 @@ public final class JsonPatch {
 
     // ── Operation dispatch ────────────────────────────────────────────────────
 
-    private static JsonNode applyOp(JsonNode root, JsonPatchOperation op) throws JsonPatchException {
+    private static TrackedJsonNode applyOp(TrackedJsonNode root, JsonPatchOperation op)
+            throws JsonPatchException {
         return switch (op) {
             case JsonPatchOperation.Add(var path, var value)      -> applyAdd(root, path, value);
             case JsonPatchOperation.Remove(var path)              -> applyRemove(root, path);
@@ -129,18 +134,21 @@ public final class JsonPatch {
 
     // ── add ───────────────────────────────────────────────────────────────────
 
-    private static JsonNode applyAdd(JsonNode root, JsonPointer path, JsonNode value)
+    private static TrackedJsonNode applyAdd(TrackedJsonNode root, JsonPointer path, JsonNode value)
             throws JsonPatchException {
         if (path.last() == null) {
             // RFC 6902 §4.1: 'add' on root replaces the entire document
-            return value.deepCopy();
+            return TrackedJsonNode.ofRoot(value.deepCopy());
         }
-        JsonNode parent = navigateToParent(root, path, "add");
+        TrackedJsonNode parent = root.at(path).parent();
+        if (parent.isMissingNode()) {
+            throw new JsonPatchException("add: parent path does not exist: " + path.head());
+        }
         String token = path.last().getMatchingProperty();
         if (parent.isObject()) {
-            ((ObjectNode) parent).set(token, value.deepCopy());
+            ((ObjectNode) parent.node()).set(token, value.deepCopy());
         } else if (parent.isArray()) {
-            ArrayNode arr = (ArrayNode) parent;
+            ArrayNode arr = (ArrayNode) parent.node();
             if ("-".equals(token)) {
                 arr.add(value.deepCopy());
             } else {
@@ -159,14 +167,18 @@ public final class JsonPatch {
 
     // ── remove ────────────────────────────────────────────────────────────────
 
-    private static JsonNode applyRemove(JsonNode root, JsonPointer path) throws JsonPatchException {
+    private static TrackedJsonNode applyRemove(TrackedJsonNode root, JsonPointer path)
+            throws JsonPatchException {
         if (path.last() == null) {
             throw new JsonPatchException("remove: cannot remove the root document");
         }
-        JsonNode parent = navigateToParent(root, path, "remove");
+        TrackedJsonNode parent = root.at(path).parent();
+        if (parent.isMissingNode()) {
+            throw new JsonPatchException("remove: parent path does not exist: " + path.head());
+        }
         String token = path.last().getMatchingProperty();
         if (parent.isObject()) {
-            ObjectNode obj = (ObjectNode) parent;
+            ObjectNode obj = (ObjectNode) parent.node();
             if (!obj.has(token)) {
                 throw new JsonPatchException("remove: field '" + token + "' not found at " + path.head());
             }
@@ -175,7 +187,7 @@ public final class JsonPatch {
             if ("-".equals(token)) {
                 throw new JsonPatchException("remove: '-' is not a valid array index");
             }
-            ArrayNode arr = (ArrayNode) parent;
+            ArrayNode arr = (ArrayNode) parent.node();
             int idx = parseArrayIndex(token, path, "remove");
             if (idx < 0 || idx >= arr.size()) {
                 throw new JsonPatchException(
@@ -190,16 +202,19 @@ public final class JsonPatch {
 
     // ── replace ───────────────────────────────────────────────────────────────
 
-    private static JsonNode applyReplace(JsonNode root, JsonPointer path, JsonNode value)
+    private static TrackedJsonNode applyReplace(TrackedJsonNode root, JsonPointer path, JsonNode value)
             throws JsonPatchException {
         if (path.last() == null) {
             // RFC 6902 §4.3: 'replace' on root replaces the entire document
-            return value.deepCopy();
+            return TrackedJsonNode.ofRoot(value.deepCopy());
         }
-        JsonNode parent = navigateToParent(root, path, "replace");
+        TrackedJsonNode parent = root.at(path).parent();
+        if (parent.isMissingNode()) {
+            throw new JsonPatchException("replace: parent path does not exist: " + path.head());
+        }
         String token = path.last().getMatchingProperty();
         if (parent.isObject()) {
-            ObjectNode obj = (ObjectNode) parent;
+            ObjectNode obj = (ObjectNode) parent.node();
             if (!obj.has(token)) {
                 throw new JsonPatchException("replace: field '" + token + "' not found at " + path.head());
             }
@@ -208,7 +223,7 @@ public final class JsonPatch {
             if ("-".equals(token)) {
                 throw new JsonPatchException("replace: '-' is not a valid array index");
             }
-            ArrayNode arr = (ArrayNode) parent;
+            ArrayNode arr = (ArrayNode) parent.node();
             int idx = parseArrayIndex(token, path, "replace");
             if (idx < 0 || idx >= arr.size()) {
                 throw new JsonPatchException(
@@ -223,13 +238,13 @@ public final class JsonPatch {
 
     // ── move ──────────────────────────────────────────────────────────────────
 
-    private static JsonNode applyMove(JsonNode root, JsonPointer from, JsonPointer path)
+    private static TrackedJsonNode applyMove(TrackedJsonNode root, JsonPointer from, JsonPointer path)
             throws JsonPatchException {
-        JsonNode value = root.at(from);
-        if (value.isMissingNode()) {
+        TrackedJsonNode fromNode = root.at(from);
+        if (fromNode.isMissingNode()) {
             throw new JsonPatchException("move: source not found at " + from);
         }
-        value = value.deepCopy();   // capture before removal shifts the tree
+        JsonNode value = fromNode.node().deepCopy();    // capture before removal shifts the tree
         root = applyRemove(root, from);
         root = applyAdd(root, path, value);
         return root;
@@ -237,42 +252,30 @@ public final class JsonPatch {
 
     // ── copy ──────────────────────────────────────────────────────────────────
 
-    private static JsonNode applyCopy(JsonNode root, JsonPointer from, JsonPointer path)
+    private static TrackedJsonNode applyCopy(TrackedJsonNode root, JsonPointer from, JsonPointer path)
             throws JsonPatchException {
-        JsonNode value = root.at(from);
-        if (value.isMissingNode()) {
+        TrackedJsonNode fromNode = root.at(from);
+        if (fromNode.isMissingNode()) {
             throw new JsonPatchException("copy: source not found at " + from);
         }
-        return applyAdd(root, path, value);   // applyAdd deep-copies before inserting
+        return applyAdd(root, path, fromNode.node());   // applyAdd deep-copies before inserting
     }
 
     // ── test ──────────────────────────────────────────────────────────────────
 
-    private static JsonNode applyTest(JsonNode root, JsonPointer path, JsonNode expected)
+    private static TrackedJsonNode applyTest(TrackedJsonNode root, JsonPointer path, JsonNode expected)
             throws JsonPatchException {
-        JsonNode actual = root.at(path);
-        if (actual.isMissingNode()) {
+        TrackedJsonNode target = root.at(path);
+        if (target.isMissingNode()) {
             throw new JsonPatchException("test: path not found: " + path);
         }
-        if (!actual.equals(expected)) {
-            throw new JsonPatchException(
-                    "test: value at " + path + " does not equal expected value");
+        if (!target.node().equals(expected)) {
+            throw new JsonPatchException("test: value at " + path + " does not equal expected value");
         }
         return root;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static JsonNode navigateToParent(JsonNode root, JsonPointer path, String op)
-            throws JsonPatchException {
-        // path.last() != null is a precondition; path.head() is never the root-tail
-        JsonPointer parentPtr = path.head();
-        JsonNode parent = root.at(parentPtr);    // at(empty) returns root itself
-        if (parent.isMissingNode()) {
-            throw new JsonPatchException(op + ": parent path does not exist: " + parentPtr);
-        }
-        return parent;
-    }
 
     private static int parseArrayIndex(String token, JsonPointer fullPath, String op)
             throws JsonPatchException {

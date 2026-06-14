@@ -18,6 +18,7 @@ When you traverse a JSON document with plain `JsonNode`, you lose location infor
 | `org.json_kula.tracked_json.json_node` | `TrackedJsonNode` — the core pointer-tracking wrapper |
 | `org.json_kula.tracked_json.json_pointer` | `JsonPointerStep` — last-segment descriptor |
 | `org.json_kula.tracked_json.json_path` | `JsonPathSearch`, `JsonPathExpression`, `InvalidPathException` — JSONPath public API |
+| `org.json_kula.tracked_json.json_patch` | `JsonPatch`, `JsonPatchException` — JSON Patch public API |
 
 ## Quick start
 
@@ -92,6 +93,30 @@ Supported features:
 - Function extensions: `length()`, `count()`, `value()`, `match()`, `search()` (I-Regexp per [RFC 9485](https://www.rfc-editor.org/rfc/rfc9485))
 
 Throws `InvalidPathException` for malformed expressions; returns an empty list when nothing matches. Validated against the [RFC 9535 Compliance Test Suite](https://github.com/jsonpath-standard/jsonpath-compliance-test-suite) (703 tests).
+
+### JSON Patch
+
+Implements [RFC 6902 — JavaScript Object Notation (JSON) Patch](https://datatracker.ietf.org/doc/html/rfc6902). Supports all six operations: `add`, `remove`, `replace`, `move`, `copy`, `test`.
+
+```java
+// Compile once (validates the patch document), apply many times
+JsonNode patch = mapper.readTree("""
+        [
+          { "op": "replace", "path": "/status", "value": "shipped" },
+          { "op": "add",     "path": "/updatedAt", "value": "2025-01-01" },
+          { "op": "test",    "path": "/version", "value": 3 }
+        ]
+        """);
+
+JsonPatch compiled = JsonPatch.compile(patch);  // throws JsonPatchException if invalid
+JsonNode result    = compiled.apply(document);  // throws JsonPatchException if an operation fails
+
+// Convenience overload for TrackedJsonNode — returns a new root-tracked node
+TrackedJsonNode result = compiled.apply(trackedDocument);
+```
+
+`compile` validates the structure of every operation (missing fields, unknown ops, non-pointer `path`/`from` values). `apply` works on a deep copy of the document, so the original is never mutated even when a later operation fails.
+
 
 ### Step — last navigation segment
 
