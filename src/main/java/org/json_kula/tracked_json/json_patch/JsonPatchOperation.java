@@ -3,7 +3,7 @@ package org.json_kula.tracked_json.json_patch;
 import com.fasterxml.jackson.core.JsonPointer;
 import com.fasterxml.jackson.databind.JsonNode;
 
-sealed interface JsonPatchOperation permits
+public sealed interface JsonPatchOperation permits
         JsonPatchOperation.Add,
         JsonPatchOperation.Remove,
         JsonPatchOperation.Replace,

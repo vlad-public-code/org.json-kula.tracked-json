@@ -21,6 +21,10 @@ public final class JsonPatch {
         this.operations = List.copyOf(operations);
     }
 
+    public List<JsonPatchOperation> getOperations() {
+        return operations;
+    }
+
     // ── Factory ───────────────────────────────────────────────────────────────
 
     /**
