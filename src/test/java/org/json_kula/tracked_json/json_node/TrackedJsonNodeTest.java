@@ -211,7 +211,7 @@ class TrackedJsonNodeTest {
     @Test
     void factoryOfPreservesSuppliedPointer() {
         JsonPointer ptr = JsonPointer.compile("/x/y");
-        TrackedJsonNode node = TrackedJsonNode.of(DOC.get("a"), ptr);
+        TrackedJsonNode node = TrackedJsonNode.of(DOC, DOC.get("a"), ptr);
         assertEquals("/x/y", node.pointer().toString());
     }
 
@@ -281,6 +281,94 @@ class TrackedJsonNodeTest {
         TrackedJsonNode b = a.at("/b");
         assertEquals("/a/b", b.pointer().toString());
         assertEquals(42, b.asInt());
+    }
+
+    // ── parent() ──────────────────────────────────────────────────────────────
+
+    @Test
+    void parentOfRootIsMissingNode() {
+        assertTrue(TrackedJsonNode.ofRoot(DOC).parent().isMissingNode());
+    }
+
+    @Test
+    void parentOfRootHasEmptyPointer() {
+        assertEquals("", TrackedJsonNode.ofRoot(DOC).parent().pointer().toString());
+    }
+
+    @Test
+    void parentOfDirectObjectChildIsRoot() {
+        TrackedJsonNode root = TrackedJsonNode.ofRoot(DOC);
+        TrackedJsonNode parent = root.get("a").parent();
+        assertEquals("", parent.pointer().toString());
+        assertEquals(DOC, parent.node());
+    }
+
+    @Test
+    void parentOfDeepObjectPropertyHasCorrectPointer() {
+        TrackedJsonNode root = TrackedJsonNode.ofRoot(DOC);
+        TrackedJsonNode parent = root.get("a").get("b").parent();
+        assertEquals("/a", parent.pointer().toString());
+        assertTrue(parent.isObject());
+    }
+
+    @Test
+    void parentOfArrayElementIsTheArray() {
+        TrackedJsonNode root = TrackedJsonNode.ofRoot(DOC);
+        TrackedJsonNode parent = root.get("a").get("c").get(1).parent();
+        assertEquals("/a/c", parent.pointer().toString());
+        assertTrue(parent.isArray());
+    }
+
+    @Test
+    void parentChainReachesRoot() {
+        TrackedJsonNode root = TrackedJsonNode.ofRoot(DOC);
+        TrackedJsonNode grandparent = root.get("a").get("b").parent().parent();
+        assertEquals("", grandparent.pointer().toString());
+        assertEquals(DOC, grandparent.node());
+    }
+
+    @Test
+    void parentIsCachedAcrossCalls() {
+        TrackedJsonNode node = TrackedJsonNode.ofRoot(DOC).get("a");
+        assertSame(node.parent(), node.parent());
+    }
+
+    @Test
+    void parentOfPathNodeIsSetEagerly() {
+        TrackedJsonNode root = TrackedJsonNode.ofRoot(DOC);
+        TrackedJsonNode missing = root.path("no_such_field");
+        TrackedJsonNode parent = missing.parent();
+        assertEquals("", parent.pointer().toString());
+        assertEquals(DOC, parent.node());
+    }
+
+    @Test
+    void parentComputedLazilyForOfFactory() {
+        JsonPointer ptr = JsonPointer.compile("/a/b");
+        TrackedJsonNode node = TrackedJsonNode.of(DOC, DOC.at(ptr), ptr);
+        TrackedJsonNode parent = node.parent();
+        assertEquals("/a", parent.pointer().toString());
+        assertTrue(parent.isObject());
+    }
+
+    @Test
+    void parentOfOfFactoryAtRootPointerIsMissingNode() {
+        TrackedJsonNode node = TrackedJsonNode.of(DOC, DOC, JsonPointer.empty());
+        assertTrue(node.parent().isMissingNode());
+    }
+
+    @Test
+    void parentOfOfFactoryWhenRootIsMissingNodeReturnsMissingNode() {
+        JsonNode missing = com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+        TrackedJsonNode node = TrackedJsonNode.of(missing, missing, JsonPointer.compile("/a"));
+        assertTrue(node.parent().isMissingNode());
+    }
+
+    @Test
+    void parentOfMissingNodeWrapperIsMissingNode() {
+        TrackedJsonNode missingParent = TrackedJsonNode.ofRoot(DOC).parent();
+        assertTrue(missingParent.isMissingNode());
+        assertTrue(missingParent.parent().isMissingNode());
     }
 
     // ── find() ────────────────────────────────────────────────────────────────

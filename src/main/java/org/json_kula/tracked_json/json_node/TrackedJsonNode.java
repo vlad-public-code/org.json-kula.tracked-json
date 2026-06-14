@@ -2,6 +2,7 @@ package org.json_kula.tracked_json.json_node;
 
 import com.fasterxml.jackson.core.JsonPointer;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.MissingNode;
 import org.json_kula.tracked_json.json_path.JsonPathSearch;
 import org.json_kula.tracked_json.json_pointer.JsonPointerStep;
 
@@ -16,23 +17,26 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 public final class TrackedJsonNode {
-
+    private final JsonNode root;
     private final JsonNode node;
     private final JsonPointer pointer;
-    private JsonPointerStep step; //lazy calculated for some cases
+    private JsonPointerStep step;   // lazy calculated for some cases
+    private TrackedJsonNode parent; // lazy calculated
 
-    private TrackedJsonNode(JsonNode node, JsonPointer pointer, JsonPointerStep step) {
+    private TrackedJsonNode(JsonNode root, JsonNode node, JsonPointer pointer, JsonPointerStep step, TrackedJsonNode parent) {
+        this.root = root;
         this.node = node;
         this.pointer = pointer;
         this.step = step;
+        this.parent = parent;
     }
 
     public static TrackedJsonNode ofRoot(JsonNode root) {
-        return new TrackedJsonNode(root, JsonPointer.empty(), JsonPointerStep.ROOT);
+        return new TrackedJsonNode(root, root, JsonPointer.empty(), JsonPointerStep.ROOT, null);
     }
 
-    public static TrackedJsonNode of(JsonNode node, JsonPointer pointer) {
-        return new TrackedJsonNode(node, pointer, null);
+    public static TrackedJsonNode of(JsonNode root, JsonNode node, JsonPointer pointer) {
+        return new TrackedJsonNode(root, node, pointer, null, null);
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
@@ -43,6 +47,10 @@ public final class TrackedJsonNode {
 
     public JsonPointer pointer() {
         return pointer;
+    }
+
+    public JsonNode root() {
+        return root;
     }
 
     /**
@@ -64,30 +72,46 @@ public final class TrackedJsonNode {
         return step;
     }
 
+    /**
+     * Returns the parent node in the document.
+     * Returns a MissingNode-wrapped instance for the root or for nodes created without a root context.
+     */
+    public TrackedJsonNode parent() {
+        if (parent == null) {
+            if (pointer.last() == null || root == null || root().isMissingNode()) {
+                parent = new TrackedJsonNode(MissingNode.getInstance(), MissingNode.getInstance(), JsonPointer.empty(), JsonPointerStep.ROOT, null);
+            } else {
+                JsonPointer parentPointer = pointer.head();
+                parent = new TrackedJsonNode(root, root.at(parentPointer), parentPointer, null, null);
+            }
+        }
+        return parent;
+    }
+
     // ── Navigation ────────────────────────────────────────────────────────────
 
     /** Returns null when the field is absent, mirroring {@link JsonNode#get(String)}. */
     public TrackedJsonNode get(String fieldName) {
         JsonNode child = node.get(fieldName);
         if (child == null) return null;
-        return new TrackedJsonNode(child, childPointer(fieldName), stepForName(fieldName));
+        return new TrackedJsonNode(root, child, childPointer(fieldName), stepForName(fieldName), this);
     }
 
     /** Returns null when the index is out of range, mirroring {@link JsonNode#get(int)}. */
     public TrackedJsonNode get(int index) {
         JsonNode child = node.get(index);
         if (child == null) return null;
-        return new TrackedJsonNode(child, pointer.appendIndex(index), stepForIndex(index));
+        return new TrackedJsonNode(root, child, pointer.appendIndex(index), stepForIndex(index), this);
     }
 
     /** Returns a MissingNode-wrapped TrackedJsonNode when the field is absent, mirroring {@link JsonNode#path(String)}. */
     public TrackedJsonNode path(String fieldName) {
-        return new TrackedJsonNode(node.path(fieldName), childPointer(fieldName), stepForName(fieldName));
+        return new TrackedJsonNode(root, node.path(fieldName), childPointer(fieldName), stepForName(fieldName), this);
     }
 
     /** Returns a MissingNode-wrapped TrackedJsonNode when the index is out of range, mirroring {@link JsonNode#path(int)}. */
     public TrackedJsonNode path(int index) {
-        return new TrackedJsonNode(node.path(index), pointer.appendIndex(index), stepForIndex(index));
+        return new TrackedJsonNode(root, node.path(index), pointer.appendIndex(index), stepForIndex(index), this);
     }
 
     /**
@@ -95,7 +119,7 @@ public final class TrackedJsonNode {
      * The resulting pointer is this node's pointer with {@code rel} appended.
      */
     public TrackedJsonNode at(JsonPointer rel) {
-        return new TrackedJsonNode(node.at(rel), pointer.append(rel), null);
+        return new TrackedJsonNode(root, node.at(rel), pointer.append(rel), null, null);
     }
 
     public TrackedJsonNode at(String jsonPtrExpr) {
@@ -111,6 +135,7 @@ public final class TrackedJsonNode {
 
     /** Iterates array elements (by index) or object values (by name), each wrapped with its pointer. */
     public Iterator<TrackedJsonNode> values() {
+        TrackedJsonNode _this = this;
         if (node.isArray()) {
             return new Iterator<>() {
                 private int i = 0;
@@ -118,7 +143,7 @@ public final class TrackedJsonNode {
                 @Override public TrackedJsonNode next() {
                     if (!hasNext()) throw new NoSuchElementException();
                     int idx = i++;
-                    return new TrackedJsonNode(node.get(idx), pointer.appendIndex(idx), stepForIndex(idx));
+                    return new TrackedJsonNode(root, node.get(idx), pointer.appendIndex(idx), stepForIndex(idx), _this);
                 }
             };
         }
@@ -128,7 +153,7 @@ public final class TrackedJsonNode {
                 @Override public boolean hasNext() { return props.hasNext(); }
                 @Override public TrackedJsonNode next() {
                     Map.Entry<String, JsonNode> e = props.next();
-                    return new TrackedJsonNode(e.getValue(), childPointer(e.getKey()), stepForName(e.getKey()));
+                    return new TrackedJsonNode(root, e.getValue(), childPointer(e.getKey()), stepForName(e.getKey()), _this);
                 }
             };
         }
@@ -138,11 +163,11 @@ public final class TrackedJsonNode {
     public Stream<TrackedJsonNode> valueStream() {
         if (node.isArray()) {
             return IntStream.range(0, node.size())
-                    .mapToObj(i -> new TrackedJsonNode(node.get(i), pointer.appendIndex(i), stepForIndex(i)));
+                    .mapToObj(i -> new TrackedJsonNode(root, node.get(i), pointer.appendIndex(i), stepForIndex(i), this));
         }
         else {
             return node.properties().stream()
-                    .map(e -> new TrackedJsonNode(e.getValue(), childPointer(e.getKey()), stepForName(e.getKey())));
+                    .map(e -> new TrackedJsonNode(root, e.getValue(), childPointer(e.getKey()), stepForName(e.getKey()), this));
         }
     }
 
@@ -150,13 +175,13 @@ public final class TrackedJsonNode {
     public Stream<Map.Entry<String, TrackedJsonNode>> propertyStream() {
         return node.properties().stream()
                 .map(e -> Map.entry(e.getKey(),
-                        new TrackedJsonNode(e.getValue(), childPointer(e.getKey()), stepForName(e.getKey()))));
+                        new TrackedJsonNode(root, e.getValue(), childPointer(e.getKey()), stepForName(e.getKey()), this)));
     }
 
     /** Calls {@code action} for each object property, passing the key and a wrapped value. */
     public void forEachEntry(BiConsumer<? super String, TrackedJsonNode> action) {
         node.properties().forEach(e ->
-                action.accept(e.getKey(), new TrackedJsonNode(e.getValue(), childPointer(e.getKey()), stepForName(e.getKey()))));
+                action.accept(e.getKey(), new TrackedJsonNode(root, e.getValue(), childPointer(e.getKey()), stepForName(e.getKey()), this)));
     }
 
     /** Returns object properties, each value wrapped with its named pointer. */
@@ -164,7 +189,7 @@ public final class TrackedJsonNode {
         Set<Map.Entry<String, TrackedJsonNode>> result = new LinkedHashSet<>(node.size());
         for (Map.Entry<String, JsonNode> e : node.properties()) {
             result.add(Map.entry(e.getKey(),
-                    new TrackedJsonNode(e.getValue(), childPointer(e.getKey()), stepForName(e.getKey()))));
+                    new TrackedJsonNode(root, e.getValue(), childPointer(e.getKey()), stepForName(e.getKey()), this)));
         }
         return result;
     }

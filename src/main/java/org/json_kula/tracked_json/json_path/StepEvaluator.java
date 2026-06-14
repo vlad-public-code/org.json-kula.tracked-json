@@ -30,7 +30,7 @@ final class StepEvaluator implements StepVisitor<List<TrackedJsonNode>> {
             if (!m.node().isObject()) continue;
             JsonNode val = m.node().get(step.name());
             if (val != null)
-                result.add(TrackedJsonNode.of(val, m.pointer().appendProperty(step.name())));
+                result.add(TrackedJsonNode.of(root, val, m.pointer().appendProperty(step.name())));
         }
         return result;
     }
@@ -41,10 +41,10 @@ final class StepEvaluator implements StepVisitor<List<TrackedJsonNode>> {
         for (TrackedJsonNode m : inputs) {
             if (m.node().isArray()) {
                 for (int i = 0; i < m.node().size(); i++)
-                    result.add(TrackedJsonNode.of(m.node().get(i), m.pointer().appendIndex(i)));
+                    result.add(TrackedJsonNode.of(root, m.node().get(i), m.pointer().appendIndex(i)));
             } else if (m.node().isObject()) {
                 for (Map.Entry<String, JsonNode> e : m.node().properties())
-                    result.add(TrackedJsonNode.of(e.getValue(), m.pointer().appendProperty(e.getKey())));
+                    result.add(TrackedJsonNode.of(root, e.getValue(), m.pointer().appendProperty(e.getKey())));
             }
         }
         return result;
@@ -57,7 +57,7 @@ final class StepEvaluator implements StepVisitor<List<TrackedJsonNode>> {
             if (!m.node().isArray()) continue;
             int actual = step.index() < 0 ? m.node().size() + step.index() : step.index();
             if (actual >= 0 && actual < m.node().size())
-                result.add(TrackedJsonNode.of(m.node().get(actual), m.pointer().appendIndex(actual)));
+                result.add(TrackedJsonNode.of(root, m.node().get(actual), m.pointer().appendIndex(actual)));
         }
         return result;
     }
@@ -76,12 +76,12 @@ final class StepEvaluator implements StepVisitor<List<TrackedJsonNode>> {
                 int to   = normalizePos(step.end(),   len, len);
                 // Use long to avoid int overflow when step is very large
                 for (long i = from; i < to; i += s)
-                    result.add(TrackedJsonNode.of(m.node().get((int) i), m.pointer().appendIndex((int) i)));
+                    result.add(TrackedJsonNode.of(root, m.node().get((int) i), m.pointer().appendIndex((int) i)));
             } else {
                 int from = normalizeNeg(step.start(), len, len - 1);
                 int to   = normalizeNeg(step.end(),   len, -1);
                 for (long i = from; i > to; i += s)
-                    result.add(TrackedJsonNode.of(m.node().get((int) i), m.pointer().appendIndex((int) i)));
+                    result.add(TrackedJsonNode.of(root, m.node().get((int) i), m.pointer().appendIndex((int) i)));
             }
         }
         return result;
@@ -95,12 +95,12 @@ final class StepEvaluator implements StepVisitor<List<TrackedJsonNode>> {
                 for (int i = 0; i < m.node().size(); i++) {
                     JsonNode elem = m.node().get(i);
                     if (step.predicate().test(elem, root))
-                        result.add(TrackedJsonNode.of(elem, m.pointer().appendIndex(i)));
+                        result.add(TrackedJsonNode.of(root, elem, m.pointer().appendIndex(i)));
                 }
             } else if (m.node().isObject()) {
                 for (Map.Entry<String, JsonNode> e : m.node().properties()) {
                     if (step.predicate().test(e.getValue(), root))
-                        result.add(TrackedJsonNode.of(e.getValue(), m.pointer().appendProperty(e.getKey())));
+                        result.add(TrackedJsonNode.of(root, e.getValue(), m.pointer().appendProperty(e.getKey())));
                 }
             }
         }
@@ -111,7 +111,7 @@ final class StepEvaluator implements StepVisitor<List<TrackedJsonNode>> {
     @Override
     public List<TrackedJsonNode> visitRecursive(RecursiveStep step) {
         List<TrackedJsonNode> all = new ArrayList<>();
-        for (TrackedJsonNode m : inputs) collectAll(m.node(), m.pointer(), all);
+        for (TrackedJsonNode m : inputs) collectAll(root, m.node(), m.pointer(), all);
         return step.inner().accept(new StepEvaluator(all, root));
     }
 
@@ -127,14 +127,14 @@ final class StepEvaluator implements StepVisitor<List<TrackedJsonNode>> {
         return result;
     }
 
-    static void collectAll(JsonNode node, JsonPointer ptr, List<TrackedJsonNode> acc) {
-        acc.add(TrackedJsonNode.of(node, ptr));
+    static void collectAll(JsonNode root, JsonNode node, JsonPointer ptr, List<TrackedJsonNode> acc) {
+        acc.add(TrackedJsonNode.of(root, node, ptr));
         if (node.isArray()) {
             for (int i = 0; i < node.size(); i++)
-                collectAll(node.get(i), ptr.appendIndex(i), acc);
+                collectAll(root, node.get(i), ptr.appendIndex(i), acc);
         } else if (node.isObject()) {
             for (Map.Entry<String, JsonNode> e : node.properties())
-                collectAll(e.getValue(), ptr.appendProperty(e.getKey()), acc);
+                collectAll(root, e.getValue(), ptr.appendProperty(e.getKey()), acc);
         }
     }
 
