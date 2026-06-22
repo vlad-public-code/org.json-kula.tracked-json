@@ -1,10 +1,10 @@
 # TrackedJSON
 
-A thin wrapper around Jackson's `JsonNode` that carries its `JsonPointer` — the node's absolute location within the document. Every navigation call propagates tracking automatically, so you always know where a value came from.
+A thin wrapper around Jackson's `JsonNode` that carries two pieces of provenance: its `JsonPointer` (absolute location within the document) and a reference to the document's root node. It supports the full set of Jackson navigation methods (`get`, `path`, `at` by name, index, or `JsonPointer`), upward navigation via `parent()`, and forward search via JSONPath (RFC 9535). Every navigation call propagates provenance automatically, so you always know where a value came from and can navigate back to the full document from any node.
 
 ## Why
 
-When you traverse a JSON document with plain `JsonNode`, you lose location information. Error messages become vague ("invalid value") and diagnostics require re-traversal. `TrackedJsonNode` keeps pointer and value together at all times.
+When you traverse a JSON document with plain `JsonNode`, you lose location information. Error messages become vague ("invalid value") and diagnostics require re-traversal. `TrackedJsonNode` keeps the pointer, the value, and the document root together at all times — no re-threading of context through your call stack.
 
 ## Requirements
 
@@ -27,9 +27,22 @@ ObjectMapper mapper = new ObjectMapper();
 JsonNode doc = mapper.readTree(json);
 TrackedJsonNode root = TrackedJsonNode.ofRoot(doc);
 
-TrackedJsonNode value = root.get("order").get("items").get(0).get("price");
-System.out.println(value.asDouble());           // 9.99
-System.out.println(value.pointer().toString()); // /order/items/0/price
+// get / path — field and index navigation
+TrackedJsonNode price = root.get("order").get("items").get(0).get("price");
+System.out.println(price.asDouble());           // 9.99
+System.out.println(price.pointer().toString()); // /order/items/0/price
+
+// at — jump directly by JsonPointer
+TrackedJsonNode same = root.at("/order/items/0/price");
+System.out.println(same.pointer().toString());  // /order/items/0/price
+
+// parent — navigate upward
+TrackedJsonNode item = price.parent();
+System.out.println(item.pointer().toString());  // /order/items/0
+
+// JsonPath — search the document
+List<TrackedJsonNode> matches = JsonPathSearch.find(root, "$.order.items[?(@.price < 10)]");
+matches.forEach(n -> System.out.println(n.pointer() + " = " + n));
 ```
 
 ## API
