@@ -36,8 +36,15 @@ jobs:
           EOF
 
       - name: Set release version from tag
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG_NAME#v}"
+          if [ -z "${VERSION}" ]; then
+            echo "ERROR: could not determine version from tag '${TAG_NAME}'"
+            exit 1
+          fi
+          echo "Setting version to ${VERSION}"
           mvn --batch-mode versions:set -DnewVersion="${VERSION}" -DgenerateBackupPoms=false
 
       - name: Deploy to Maven Central
