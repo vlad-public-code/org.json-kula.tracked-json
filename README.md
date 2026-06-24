@@ -22,6 +22,14 @@ When you traverse a JSON document with plain `JsonNode`, you lose location infor
 
 ## Quick start
 
+```xml
+<dependency>
+    <groupId>io.github.vlad-public-code</groupId>
+    <artifactId>tracked-json</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
 ```java
 ObjectMapper mapper = new ObjectMapper();
 JsonNode doc = mapper.readTree(json);
